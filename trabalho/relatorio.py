@@ -825,10 +825,10 @@ figcaption { font-size: 8.4pt; color: #52514e; margin-top: 3px; }
 
 capa = """
 <div class="capa">
-  <div class="inst">Curso de Ciência de Dados e Inteligência Artificial<br/>Análise Multivariada</div>
+  <div class="inst">IESB – Instituto de Educação Superior de Brasília<br/>Curso de Ciência de Dados e Inteligência Artificial<br/>Disciplina: Análise Multivariada</div>
   <div class="tit">Modelagem Estatística Multivariada<br/>e Avaliação de Performance</div>
   <div class="sub">Relatório técnico – Comportamento, satisfação e padrão financeiro<br/>de clientes de uma rede de varejo</div>
-  <div class="info">Aluno(a): ____________________________<br/>Novembro de 2026</div>
+  <div class="info">Aluno: Gabriel César de França Pereira<br/>Professora: Natália Ribeiro de Souza Evangelista<br/><br/>Brasília, novembro de 2026</div>
 </div>
 <div class="sumario">
 <h1>Sumário</h1>
