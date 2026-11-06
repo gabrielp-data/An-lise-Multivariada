@@ -74,14 +74,13 @@ chi_ct = stats.chi2_contingency(ct)
 
 H.append(f"""
 <h1>1. Base de dados e visão geral</h1>
-<p>A base contém <b>{N} clientes</b> e foi gerada exatamente conforme a especificação do enunciado (mesmas
-distribuições, efeitos de região e de fidelidade, regras de arredondamento e truncamento, semente 12345).
-Como o gerador pseudoaleatório utilizado não é o do SAS, os valores individuais não coincidem com os do
-arquivo SAS, mas a estrutura populacional é idêntica, de modo que as conclusões são equivalentes.
-A distribuição dos clientes é: Norte = {reg_n['Norte']}, Sul = {reg_n['Sul']}, Centro = {reg_n['Centro']};
-Status de Fidelidade 0 = {st_n[0]} ({st_n[0]/N:.0%}) e 1 = {st_n[1]} ({st_n[1]/N:.0%}). Região e status são
-independentes (qui-quadrado = {fn(chi_ct[0],2)}, gl = {chi_ct[2]}, p = {fp(chi_ct[1])}), o que evita confusão entre
-os dois fatores nas análises seguintes. Não há valores ausentes.</p>
+<p>A base contém <b>{N} clientes</b> e foi construída por simulação a partir das regras e distribuições descritas no
+enunciado. Como foi utilizado um gerador pseudoaleatório diferente do SAS, os valores individuais não coincidem
+necessariamente com os do arquivo original. Portanto, este relatório deve ser entendido como uma <b>reprodução
+independente do procedimento</b>, e não como uma cópia da base SAS; resultados numéricos e conclusões podem variar.
+A distribuição observada foi: Norte = {reg_n['Norte']}, Sul = {reg_n['Sul']} e Centro = {reg_n['Centro']};
+Status 0 = {st_n[0]} ({st_n[0]/N:.0%}) e Status 1 = {st_n[1]} ({st_n[1]/N:.0%}). Região e status não apresentaram associação
+estatisticamente significativa (χ² = {fn(chi_ct[0],2)}; gl = {chi_ct[2]}; p = {fp(chi_ct[1])}). Não há valores ausentes.</p>
 {tabela(lin, ["Variável", "Média", "Desvio-padrão", "Mínimo", "Mediana", "Máximo", "Assimetria", "Curtose (exc.)"],
         "Tabela 1 – Estatísticas descritivas das variáveis contínuas (n = 300)")}
 """)
@@ -266,8 +265,10 @@ variáveis relacionadas, mas não redundantes – situação ideal para a MANOVA
 <h2>3.3 Resultados</h2>
 {tabela(lin_mv, ["Critério multivariado", "Valor", "F aproximado", "gl num.", "gl den.", "p-valor"], "Tabela 7 – Testes multivariados para o efeito da Região")}
 <p>Todos os critérios rejeitam H<sub>0</sub> (p {fp(float(mv.loc["Wilks' lambda", "Pr > F"]))}): <b>o vetor de médias difere entre as regiões</b>.
-O Lambda de Wilks de {fn(float(mv.loc["Wilks' lambda", "Value"]),3)} indica que cerca de 19% da variância generalizada das três métricas está
-associada à região (η² multivariado = 1 − Λ<sup>1/s</sup> = {fn(r2['eta2_mult'],3)} por dimensão). Como o M de Box não foi
+O Lambda de Wilks ({fn(float(mv.loc["Wilks' lambda", "Value"]),3)}) confirma a diferença multivariada. Seu complemento
+(1 − Λ = {fn(1-float(mv.loc["Wilks' lambda", "Value"]),3)}) é apenas uma transformação descritiva do Lambda e não deve ser interpretado
+diretamente como percentual de variância explicado ou como η² multivariado. Para discutir magnitude, utilizam-se os
+tamanhos de efeito das ANOVAs univariadas (Tabela 8), que mostram efeitos distintos para cada variável. Como o M de Box não foi
 significativo, Wilks é o critério de referência; o Traço de Pillai, o mais robusto a violações, confirma o resultado.
 A maior raiz de Roy, também significativa, indica que a maior parte da diferença se concentra em uma dimensão.
 As duas funções discriminantes associadas (Tabela 9) mostram que a primeira dimensão (73% da separação) é dominada por
@@ -338,8 +339,9 @@ for k in [0, 1]:
     ax.hist(z[y == k], bins=bins, color=COR_ST[k], alpha=0.75, label=ROT_ST[k], edgecolor="white", linewidth=0.6)
 corte_z = (cz[0] + cz[1]) / 2
 ax.axvline(corte_z, color=INK, lw=1.2, ls="--")
-ax.text(corte_z, ax.get_ylim()[1] * 0.92, "  ponto de corte", fontsize=8.5, color=INK)
-ax.set_xlabel("Escore discriminante"); ax.set_ylabel("Nº de clientes"); ax.legend(loc="upper right", fontsize=8)
+ax.text(corte_z, ax.get_ylim()[1] * 0.55, "  ponto de corte", fontsize=8.5, color=INK)
+ax.set_xlabel("Escore discriminante"); ax.set_ylabel("Nº de clientes")
+ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=2, fontsize=8)
 ax.set_title("Distribuição do escore discriminante por grupo")
 ax = axs[1]
 for k in [0, 1]:
@@ -348,7 +350,7 @@ for k in [0, 1]:
 xx = np.linspace(df.Freq_Online.min(), df.Freq_Online.max(), 10)
 ax.set_xlabel("Freq. Online (transações/ano)"); ax.set_ylabel("Gasto Online (R$)")
 ax.set_title("Mesma frequência, gasto maior no grupo 1")
-ax.legend(loc="upper left", fontsize=8)
+ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=2, fontsize=8)
 fig.tight_layout()
 fig3 = fig_html(fig, "Figura 4 – Separação obtida pela função discriminante (esq.) e a origem da separação: para cada nível de frequência online, os clientes Ativos/Alto Valor gastam sistematicamente mais (dir.).")
 
@@ -385,39 +387,41 @@ padronizados instáveis e de sinais opostos; por isso a interpretação combina 
 A distância de Mahalanobis entre os centróides é D² = {fn(r3['D2'],2)} (T² de Hotelling: F = {fn(r3['hotelling']['F'],1)}; gl = 5; 294).
 Centróides: Status 0 = {fn(cz[0],3)}; Status 1 = {fn(cz[1],3)} (escala com variância intra-grupo unitária).</p>
 {tabela(lin_coef, ["Variável", "Coef. não padronizado", "Coef. padronizado", "Carga estrutural (intra-grupos)", "Correlação com o escore (amostra total)"], "Tabela 14 – Coeficientes e cargas da função discriminante")}
-<p><b>Pesos padronizados.</b> Os maiores pesos padronizados (em valor absoluto) são de <b>Gasto Online (+{fn(r3['coef_pad_norm']['Gasto_Online'],2)})</b>,
-<b>Gasto Loja ({fn(r3['coef_pad_norm']['Gasto_Loja'],2)})</b>, <b>Freq. Online ({fn(r3['coef_pad_norm']['Freq_Online'],2)})</b> e
-<b>Freq. Loja (+{fn(r3['coef_pad_norm']['Freq_Loja'],2)})</b>; Tempo de Relação tem peso praticamente nulo ({fn(r3['coef_pad_norm']['Tempo_Relacao'],3)}). Os sinais opostos
-dentro de cada par gasto/frequência, consequência da colinearidade, revelam o que a função realmente mede: a razão
-entre os coeficientes brutos de Gasto Online e Freq. Online é ≈ −1/36, e a de Gasto Loja e Freq. Loja ≈ −1/40. Ou seja, o
-eixo discriminante é essencialmente <b>“gasto além do que a frequência explicaria”</b> (≈ Gasto Online − 36 × Freq. Online),
-uma medida de <b>ticket médio</b>, corrigida pelo componente regional capturado pelo gasto em loja (que expurga
-parte do efeito da região sobre o gasto). A correlação desse índice simples (Gasto Online − 35 × Freq. Online) com o
-escore discriminante é {fn(r_on,3)}. Pelas cargas estruturais e pelas correlações na amostra total, <b>Gasto Online é a
-variável mais associada ao eixo</b>, seguida de Gasto Loja e Freq. Loja; Freq. Online e Tempo de Relação são irrelevantes
-isoladamente (testes univariados não significativos), mas Freq. Online é indispensável como variável “supressora”.</p>
+<p><b>Pesos padronizados.</b> Em valor absoluto, os maiores pesos padronizados são de Gasto Online
+({fn(r3['coef_pad_norm']['Gasto_Online'],2)}), Gasto Loja ({fn(r3['coef_pad_norm']['Gasto_Loja'],2)}), Freq. Online ({fn(r3['coef_pad_norm']['Freq_Online'],2)}) e
+Freq. Loja ({fn(r3['coef_pad_norm']['Freq_Loja'],2)}); Tempo de Relação tem peso praticamente nulo ({fn(r3['coef_pad_norm']['Tempo_Relacao'],3)}).
+Entretanto, a colinearidade elevada entre Gasto Loja e Freq. Loja (VIF ≈ 28) e, em menor grau, entre Gasto Online e
+Freq. Online torna esses coeficientes <b>sensíveis e potencialmente instáveis</b>: os sinais opostos dentro de cada par
+gasto/frequência são consequência dessa colinearidade. Assim, não é adequado interpretar isoladamente os sinais e
+magnitudes dos coeficientes, nem concluir que a função representa exatamente um índice de ticket médio. As cargas
+estruturais e as correlações com o escore também são relativamente modestas; a evidência mais clara é a diferença
+univariada em <b>Gasto Online</b> (Tabela 11), acompanhada por diferenças menores em Gasto Loja e Freq. Loja. Vale notar que,
+pela regra de geração dos dados, o status de fidelidade só atua sobre o Gasto Online; as diferenças observadas no canal
+físico são, portanto, provavelmente flutuação amostral desta base. A função separa muito bem os grupos nesta base
+simulada, mas a contribuição individual das variáveis deve ser interpretada com cautela.</p>
 
 <h2>4.4 Capacidade de classificação</h2>
 {conf_tab(cls['conf'], "Tabela 15 – Matriz de confusão por resubstituição (a priori iguais)")}
 {conf_tab(cls['conf_loo'], "Tabela 16 – Matriz de confusão por validação cruzada “deixe-um-fora” (Lachenbruch)")}
 {conf_tab(ho['conf'], f"Tabela 17 – Validação com amostra de teste (função estimada em {ho['n_tr']} clientes, aplicada a {ho['n_te']} novos)")}
-<p>A taxa de erro aparente (APER) é de {fn(cls['aper']*100,1)}%, a taxa de erro estimada por validação cruzada é de {fn(cls['loo']*100,1)}% e,
-na amostra de teste, {fn(ho['erro']*100,1)}%. Com probabilidades a priori proporcionais (π<sub>1</sub> = {fn(st_n[1]/N,3)}) o resultado é idêntico
+<p>A taxa de erro aparente (APER), a taxa de erro estimada por validação cruzada e a taxa de erro na amostra de teste foram,
+respectivamente, {fn(cls['aper']*100,1)}%, {fn(cls['loo']*100,1)}% e {fn(ho['erro']*100,1)}%. Com probabilidades a priori proporcionais (π<sub>1</sub> = {fn(st_n[1]/N,3)}) o resultado é idêntico
 (erro de {fn(clp['loo']*100,1)}%). O desempenho supera com folga os critérios de referência: chance proporcional C<sub>pro</sub> = {fn(r3['cpro']*100,1)}% e
 chance máxima C<sub>max</sub> = {fn(r3['cmax']*100,1)}% (a regra de 25% acima da chance exigiria ≥ 62,8%); o Q de Press = {fn(r3['pressQ'],1)} é muito superior ao valor crítico
-χ²<sub>1; 0,01</sub> = 6,63. A separação perfeita é coerente com a forma como a base foi construída (o status adiciona R$ 200 ao
-gasto online, com ruído de desvio-padrão R$ 15) e deve ser vista como um limite superior: em dados reais, com mais
-ruído, espera-se algum erro, e o modelo deve ser revalidado periodicamente.</p>
+χ²<sub>1; 0,01</sub> = 6,63. A separação perfeita é um resultado desta base simulada (o status adiciona R$ 200 ao gasto online, com ruído de
+desvio-padrão R$ 15) e não deve ser generalizada: não se deve atribuir toda a separação a um único indicador nem tratar
+a função como regra causal, e o desempenho deve ser validado em dados externos antes de qualquer aplicação real.</p>
 {fig3}
 
 <h2>4.5 Interpretação negocial</h2>
-<p>O que distingue o cliente Ativo/Alto Valor <b>não é comprar mais vezes nem estar há mais tempo no programa</b> – a frequência
-online e o tempo de relação são estatisticamente iguais nos dois grupos –, mas <b>gastar mais em cada compra online</b>
-(cerca de R$ 190 a mais por ano para a mesma frequência). Implicações: (i) o critério operacional de elegibilidade e o
-monitoramento de risco devem se basear no <b>ticket médio digital</b>, não na contagem de transações; (ii) campanhas para
-migrar clientes do grupo 0 para o grupo 1 devem focar em aumento de cesta (cross-sell, up-sell, frete grátis acima de
-um valor) e não em frequência; (iii) a função pode ser aplicada a novos clientes como regra de pontuação simples
-(escore acima do ponto de corte ⇒ perfil de alto valor), com erro estimado praticamente nulo nesta base.</p>
+<p>Nesta base, o que mais distingue o cliente Ativo/Alto Valor é o <b>Gasto Online</b>: a frequência online e o tempo de
+relação são estatisticamente iguais nos dois grupos, enquanto o gasto online é, em média, cerca de R$ 190 maior no
+grupo 1. Isso sugere, como <b>hipótese gerencial a validar em dados reais</b>, que o valor gasto no canal digital – e não a
+contagem de transações – seja um bom indicador inicial do perfil de alto valor. Implicações possíveis: (i) usar o gasto
+online como indicador de acompanhamento do programa de fidelidade; (ii) testar campanhas de aumento de cesta
+(cross-sell, up-sell, frete grátis acima de um valor) para clientes do grupo 0, medindo o efeito com grupo de controle;
+(iii) aplicar a função como regra de pontuação somente após validá-la em dados externos, pois a separação perfeita aqui
+observada é específica desta amostra simulada.</p>
 """)
 
 # =============================================================== PARTE IV (MDS)
@@ -488,15 +492,15 @@ autovalores negativos relevantes na solução clássica – todos os autovalores
 natureza euclidiana das distâncias – e (iii) a qualidade do ajuste, medida pelo stress e pelo RSQ.</p>
 
 <h2>5.3 Métricas de ajuste</h2>
-{tabela(lin_sd, ["Dimensões", "Stress-1 de Kruskal", "Classificação (Kruskal)", "RSQ", "Variância acumulada (autovalores)"], "Tabela 18 – Ajuste do MDS métrico por número de dimensões")}
-<p>Na solução bidimensional, o <b>stress-1 é {fn(s2.stress,3)}</b> (ajuste “razoável” pela escala de Kruskal), o <b>RSQ é {fn(s2.rsq,3)}</b> (90% da
-variância das distâncias originais é reproduzida pelas distâncias no mapa) e as duas dimensões concentram
-{fn(s2.var_acum*100,1)}% da soma dos autovalores. O MDS não métrico em 2D obteve stress-1 = {fn(r4['nm_stress'],3)} e RSQ = {fn(r4['nm_rsq'],3)},
-ligeiramente melhor por exigir apenas a preservação da ordem das distâncias, e produziu essencialmente a mesma
-configuração. A curva de stress (Figura 6) mostra um “cotovelo” em 3 dimensões (stress {fn(sd.stress.iloc[2],3)}, excelente); a terceira
-dimensão corresponde basicamente ao Tempo de Relação. Optou-se pela solução 2D por exigência de visualização e porque
-o diagrama de Shepard mostra que as distâncias grandes – as que definem a estrutura global e os agrupamentos – são bem
-preservadas; as distorções concentram-se em pares próximos que o mapa “aproxima” um pouco além do real.</p>
+{tabela(lin_sd, ["Dimensões", "Stress-1 de Kruskal", "Classificação (Kruskal)", "RSQ", "Variância acumulada (autovalores)"], "Tabela 18 – Indicadores de ajuste da solução métrica clássica por número de dimensões")}
+<p>Na solução bidimensional, o <b>stress-1</b> calculado entre as dissimilaridades originais e as distâncias do mapa é
+<b>{fn(s2.stress,3)}</b>. A classificação “razoável” usa apenas como referência a escala interpretativa usualmente associada a
+Kruskal; ela não significa que o algoritmo ajustado tenha sido o MDS não métrico. O <b>RSQ é {fn(s2.rsq,3)}</b> e as duas dimensões
+concentram {fn(s2.var_acum*100,1)}% da soma dos autovalores. Em análise complementar, o MDS não métrico de Kruskal em 2D obteve
+stress-1 = {fn(r4['nm_stress'],3)} e RSQ = {fn(r4['nm_rsq'],3)}. Os resultados dos dois procedimentos devem ser distinguidos: o clássico
+métrico procura reproduzir as distâncias, enquanto o não métrico preserva principalmente sua ordenação. A curva de
+stress (Figura 6) mostra melhora expressiva em 3 dimensões (stress {fn(sd.stress.iloc[2],3)}); optou-se pela solução 2D por facilitar a
+visualização e atender ao objetivo de síntese.</p>
 {fig5}
 
 <h2>5.4 Interpretação da configuração</h2>
@@ -640,17 +644,20 @@ H.append(f"""
 <table><thead><tr><th>Questão</th><th>Método</th><th>Principal achado</th><th>Ação recomendada</th></tr></thead><tbody>
 <tr><td class="l">1. Satisfação por região</td><td class="l">ANOVA de um fator + Tukey</td><td class="l">Norte &lt; Sul &lt; Centro, todas diferentes (η² = 0,24)</td><td class="l">Plano de experiência para o Norte; Centro como benchmark; metas regionalizadas</td></tr>
 <tr><td class="l">2. Vetor (Gasto Online, Gasto Loja, NPS)</td><td class="l">MANOVA</td><td class="l">Efeito global significativo (Λ = {fn(float(mv.loc["Wilks' lambda","Value"]),3)}); Sul lidera em gasto, Centro em NPS</td><td class="l">Ativação digital no Norte; monetizar a boa percepção do Centro</td></tr>
-<tr><td class="l">3. Separação por Status</td><td class="l">Análise discriminante linear de Fisher</td><td class="l">Ticket médio online separa os grupos (r<sub>c</sub> = {fn(r3['rcan'],3)}); erro de validação {fn(cls['loo']*100,1)}%</td><td class="l">Elegibilidade e risco pelo gasto por transação; campanhas de aumento de cesta</td></tr>
+<tr><td class="l">3. Separação por Status</td><td class="l">Análise discriminante linear de Fisher</td><td class="l">Gasto Online tem a maior diferença média; há também diferenças menores em Gasto Loja e Freq. Loja. Erro observado: {fn(cls['loo']*100,1)}%</td><td class="l">Tratar como indicador inicial; validar em dados externos antes de definir elegibilidade ou risco</td></tr>
 <tr><td class="l">4. Mapa perceptual</td><td class="l">Escalonamento multidimensional</td><td class="l">Dois gradientes: volume e canal (stress {fn(s2.stress,3)}; RSQ {fn(s2.rsq,3)})</td><td class="l">Segmentação contínua por valor (eixo 1) e canal (eixo 2)</td></tr>
 <tr><td class="l">5. Engajamento × Retorno</td><td class="l">Correlação canônica</td><td class="l">Dois pares significativos, um por canal (0,98 e 0,92); NPS não explicado pelo engajamento</td><td class="l">Metas de receita via frequência por canal; NPS via experiência</td></tr>
 </tbody></table>
-<p>Em conjunto, as análises mostram que a <b>região</b> afeta sobretudo a percepção e o gasto digital, que o <b>status de fidelidade</b> se
-manifesta no valor por transação e não na frequência, e que o <b>engajamento</b> gera retorno financeiro dentro de cada canal,
-mas não melhora a percepção da marca. As estratégias de marketing e operação devem, portanto, ser segmentadas
-simultaneamente por região, canal e valor do cliente.</p>
-<p class="nota">Nota metodológica: todos os testes foram conduzidos ao nível de significância de 5%. As análises foram realizadas sobre
-a base sintética gerada segundo a especificação do enunciado; como os dados são simulados, a separação perfeita na
-análise discriminante e as correlações canônicas muito elevadas refletem a baixa variância dos ruídos definidos na geração.</p>
+<p>Em conjunto, as análises indicam diferenças regionais na satisfação e no conjunto de indicadores financeiros/perceptuais;
+associação forte entre o status de fidelidade e o perfil de gastos; e relações entre frequência e gasto predominantemente
+dentro de cada canal. Como há colinearidade entre variáveis de gasto e frequência, a interpretação dos coeficientes
+discriminantes individuais exige cautela. As recomendações devem ser tratadas como <b>hipóteses gerenciais a validar em
+dados reais</b>, e não como relações causais demonstradas pela simulação.</p>
+<p class="nota">Nota metodológica: todos os testes foram conduzidos ao nível de significância de 5%. A base é sintética e foi reproduzida
+de forma independente, com gerador pseudoaleatório diferente do SAS; por isso, os resultados não devem ser apresentados
+como idênticos aos de uma eventual base SAS original. A separação perfeita observada na análise discriminante é específica
+desta amostra e não garante desempenho semelhante em clientes reais. Recomenda-se validar o modelo em dados externos
+antes de qualquer uso operacional.</p>
 """)
 
 CSS = """
