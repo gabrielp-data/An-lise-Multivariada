@@ -222,7 +222,32 @@ for v in DV:
         return "✓" if row.reject else "–"
     lin_tk2.append([NOMES[v], gp("Norte", "Sul"), gp("Norte", "Centro"), gp("Sul", "Centro")])
 ds = r2["disc_std"]
-lin_ds = [[NOMES[v], fn(ds.loc[v, "Função 1"], 3), fn(ds.loc[v, "Função 2"], 3)] for v in DV]
+def sscp(M, titulo):
+    return tabela([[NOMES[a]] + [fn(M[i, j], 2) for j in range(3)] for i, a in enumerate(DV)], [""] + [NOMES[v] for v in DV], titulo)
+tab_H = sscp(r2["H"], "Tabela 7a – Matriz H de somas de quadrados e produtos cruzados da hipótese (efeito Região)")
+tab_E = sscp(r2["E"], "Tabela 7b – Matriz E de somas de quadrados e produtos cruzados do erro")
+pe, pp = r2["parcial_E"], r2["parcial_E_p"]
+tab_pE = tabela([[NOMES[a]] + [("1,000" if a == b else f"{fn(pe.loc[a, b], 3)} (p {fp(pp.loc[a, b]) if pp.loc[a, b] < 1e-4 else '= ' + fp(pp.loc[a, b])})") for b in DV] for a in DV],
+                [""] + [NOMES[v] for v in DV], "Tabela 7c – Correlações parciais obtidas da matriz E (gl = 297)")
+rz, vt = r2["raizes"], r2["vetores"]
+lin_rz = []
+for k in range(3):
+    lin_rz.append([f"{k+1}", fn(max(rz.raiz[k], 0), 6), fn(max(rz.pct[k], 0), 2) + "%"] + [f"{vt.iloc[j, k]:.6f}".replace(".", ",") for j in range(3)]
+                  + ([fn(ds.iloc[j, k], 3) for j in range(3)] if k < 2 else ["–"] * 3))
+tab_rz = tabela(lin_rz, ["Raiz", "Valor característico", "Percentual"] + [f"Vetor: {NOMES[v]}" for v in DV] + [f"Padr.: {NOMES[v]}" for v in DV],
+                "Tabela 7d – Raízes e vetores característicos de E<sup>−1</sup>H (vetores normalizados por v'Ev = 1; à direita, coeficientes padronizados relativos)")
+ls = r2["lsmeans"].set_index(["Regiao", "variavel"])
+lin_ls = [[g] + [f"{fn(ls.loc[(g, v), 'lsmean'], 2)} ± {fn(ls.loc[(g, v), 'ep'], 2)}" for v in DV] for g in ORD]
+tk_p = {}
+for v in DV:
+    t = r2["tukey"][v]
+    for _, row in t.iterrows():
+        tk_p[(v, frozenset([row.group1, row.group2]))] = row["p-adj"]
+lin_pd = []
+for row in r2["pdiff"].itertuples():
+    a, b = row.par.split(" − ")
+    pt = tk_p[(row.variavel, frozenset([a, b]))]
+    lin_pd.append([NOMES[row.variavel], row.par, fn(row.dif, 2), fn(row.t, 3), fp(row.p), fp(pt) if pt >= 1e-4 else "&lt; 0,0001", "Sim" if pt < 0.05 else "Não"])
 
 fig, axs = plt.subplots(1, 3, figsize=(10, 3.0))
 for ax, v in zip(axs, DV):
@@ -263,7 +288,20 @@ variáveis relacionadas, mas não redundantes – situação ideal para a MANOVA
 {tabela(lin_pres, ["Teste de pressuposto", "Estatística", "p-valor"], "Tabela 6 – Testes de pressupostos da MANOVA")}
 
 <h2>3.3 Resultados</h2>
-{tabela(lin_mv, ["Critério multivariado", "Valor", "F aproximado", "gl num.", "gl den.", "p-valor"], "Tabela 7 – Testes multivariados para o efeito da Região")}
+<p>Seguindo a saída do procedimento de modelos lineares gerais com a opção MANOVA (impressão das matrizes E e H), apresentam-se
+primeiro as matrizes de somas de quadrados e produtos cruzados. A diagonal de <b>H</b> contém as somas de quadrados entre regiões de
+cada variável (as mesmas das ANOVAs univariadas) e a diagonal de <b>E</b>, as somas de quadrados dentro das regiões; fora da diagonal
+estão os produtos cruzados, que carregam a informação de covariância ignorada pelas análises univariadas.</p>
+{tab_H}
+{tab_E}
+<p>As correlações parciais da matriz E medem a associação entre as variáveis dependentes <i>depois de remover o efeito da Região</i>.
+Todas são significativas – em especial Gasto Online × NPS (0,43) –, o que confirma que as variáveis dependentes não são
+independentes entre si e justifica a análise conjunta.</p>
+{tab_pE}
+<p>Os critérios multivariados são funções das raízes características de <b>E</b><sup>−1</sup><b>H</b>. Como há 3 regiões, existem no máximo
+s = min(3 variáveis; 2 gl da hipótese) = 2 raízes não nulas.</p>
+{tab_rz}
+{tabela(lin_mv, ["Critério multivariado", "Valor", "F aproximado", "gl num.", "gl den.", "p-valor"], "Tabela 7 – Testes multivariados para a hipótese de ausência de efeito global da Região (S = 2; M = 0; N = 146,5)")}
 <p>Todos os critérios rejeitam H<sub>0</sub> (p {fp(float(mv.loc["Wilks' lambda", "Pr > F"]))}): <b>o vetor de médias difere entre as regiões</b>.
 O Lambda de Wilks ({fn(float(mv.loc["Wilks' lambda", "Value"]),3)}) confirma a diferença multivariada. Seu complemento
 (1 − Λ = {fn(1-float(mv.loc["Wilks' lambda", "Value"]),3)}) é apenas uma transformação descritiva do Lambda e não deve ser interpretado
@@ -271,11 +309,16 @@ diretamente como percentual de variância explicado ou como η² multivariado. P
 tamanhos de efeito das ANOVAs univariadas (Tabela 8), que mostram efeitos distintos para cada variável. Como o M de Box não foi
 significativo, Wilks é o critério de referência; o Traço de Pillai, o mais robusto a violações, confirma o resultado.
 A maior raiz de Roy, também significativa, indica que a maior parte da diferença se concentra em uma dimensão.
-As duas funções discriminantes associadas (Tabela 9) mostram que a primeira dimensão (73% da separação) é dominada por
-<b>Gasto Online</b>, e a segunda por <b>NPS</b>.</p>
+Os vetores característicos (Tabela 7d) mostram que a primeira raiz (72,7% da separação) é dominada por <b>Gasto Online</b>
+e a segunda (27,3%) por <b>NPS</b>; como os vetores brutos dependem das unidades de medida (R$ × pontos), a leitura é feita pelos
+coeficientes padronizados à direita da tabela.</p>
 {tabela(lin_u, ["Variável dependente", "F (2; 297)", "p-valor", "p Bonferroni (×3)", "η²"], "Tabela 8 – ANOVAs univariadas de acompanhamento")}
-{tabela(lin_ds, ["Variável", "Função 1", "Função 2"], "Tabela 9 – Coeficientes padronizados das funções discriminantes da MANOVA (escala relativa)")}
-{tabela(lin_tk2, ["Variável", "Norte × Sul", "Norte × Centro", "Sul × Centro"], "Tabela 10 – Pares de regiões significativamente diferentes (Tukey, 5%)")}
+{tabela(lin_ls, [ "Região"] + [NOMES[v] for v in DV], "Tabela 9 – Médias de mínimos quadrados (± erro-padrão) por região")}
+<p>As médias de mínimos quadrados coincidem com as médias amostrais, pois o modelo tem um único fator. A comparação par a par
+(diferença das médias de mínimos quadrados, teste t com o quadrado médio do erro) é apresentada sem ajuste e com o ajuste de
+Tukey para múltiplas comparações. Sem ajuste, o par Sul × Centro em Gasto Loja aparece significativo (p = 0,039), mas deixa de
+sê-lo com Tukey (p = 0,097): ilustra-se o risco de inflar o erro tipo I ao fazer várias comparações.</p>
+{tabela(lin_pd, ["Variável", "Comparação", "Diferença", "t", "p (sem ajuste)", "p (Tukey)", "Difere (Tukey)?"], "Tabela 10 – Comparações par a par das médias de mínimos quadrados", alinhar_esq=2)}
 {fig2}
 
 <h2>3.4 Por que a MANOVA pode divergir de três ANOVAs separadas</h2>
@@ -803,6 +846,15 @@ capa = """
 </div>
 """
 
+import re as _re
+_corpo = "".join(H)
+_ordem = []
+for _m in _re.finditer(r"Tabela (\d+[a-z]?) –", _corpo):
+    if _m.group(1) not in _ordem:
+        _ordem.append(_m.group(1))
+_mapa = {k: str(i + 1) for i, k in enumerate(_ordem)}
+_corpo = _re.sub(r"Tabela (\d+[a-z]?)\b", lambda m: "Tabela " + _mapa.get(m.group(1), m.group(1)), _corpo)
+H = [_corpo]
 html = f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Trabalho de Análise Multivariada</title>
 <style>{CSS}</style></head><body>{capa}{''.join(H)}</body></html>"""
 (AQUI / "relatorio_trabalho_am.html").write_text(html, encoding="utf-8")

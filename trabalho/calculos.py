@@ -145,6 +145,36 @@ def parte2(df):
     std = vecs * sd_within[:, None]
     std = std / np.abs(std).max(0)
     r["disc_std"] = pd.DataFrame(std[:, :2], index=DV2, columns=["Função 1", "Função 2"])
+    # saída no formato do PROC GLM (MANOVA / PRINTE PRINTH, LSMEANS / STDERR PDIFF)
+    dfE = len(df) - 3
+    dE = np.sqrt(np.diag(E))
+    Rp = E / np.outer(dE, dE)
+    tP = Rp * np.sqrt((dfE - 1) / (1 - np.clip(Rp**2, 0, 0.999999)))
+    pP = 2 * stats.t.sf(np.abs(tP), dfE - 1)
+    np.fill_diagonal(pP, np.nan)
+    r["parcial_E"] = pd.DataFrame(Rp, index=DV2, columns=DV2)
+    r["parcial_E_p"] = pd.DataFrame(pP, index=DV2, columns=DV2)
+    vv = vecs / np.sqrt(np.diag(vecs.T @ E @ vecs))
+    vv = vv * np.sign(vv[np.argmax(np.abs(vv), 0), range(vv.shape[1])])
+    r["vetores"] = pd.DataFrame(vv, index=DV2)
+    evs = np.real(vals)[idx]
+    r["raizes"] = pd.DataFrame(dict(raiz=evs, pct=100 * evs / evs.sum()))
+    r["SMN"] = (2, 0.0, (dfE - len(DV2) - 1) / 2)
+    msE = np.diag(E) / dfE
+    ls = []
+    for k in [1, 2, 3]:
+        nk = np.sum(g == k)
+        for j, v in enumerate(DV2):
+            ls.append(dict(Regiao=REG[k], variavel=v, lsmean=medias.loc[k, v], ep=np.sqrt(msE[j] / nk), n=nk))
+    r["lsmeans"] = pd.DataFrame(ls)
+    pdiff = []
+    for j, v in enumerate(DV2):
+        for a, b in [(1, 2), (1, 3), (2, 3)]:
+            na, nb = np.sum(g == a), np.sum(g == b)
+            d = medias.loc[b, v] - medias.loc[a, v]
+            t = d / np.sqrt(msE[j] * (1 / na + 1 / nb))
+            pdiff.append(dict(variavel=v, par=f"{REG[b]} − {REG[a]}", dif=d, t=t, p=2 * stats.t.sf(abs(t), dfE)))
+    r["pdiff"] = pd.DataFrame(pdiff)
     # Tukey para cada DV
     r["tukey"] = {}
     for v in DV2:
