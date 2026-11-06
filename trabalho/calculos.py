@@ -305,6 +305,24 @@ def parte4(df):
 # ---------------------------------------------------------------- Parte V (CCA)
 B1 = ["Freq_Online", "Freq_Loja", "Tempo_Relacao"]
 B2 = ["Gasto_Online", "Gasto_Loja", "NPS_Pontuacao"]
+def parte5_basico(X, Y):
+    """Correlações canônicas e cargas (para validação em subamostras)."""
+    p = X.shape[1]
+    R = np.corrcoef(np.hstack([X, Y]).T)
+    Rxx, Ryy, Rxy = R[:p, :p], R[p:, p:], R[:p, p:]
+    ev, A = np.linalg.eig(np.linalg.solve(Rxx, Rxy) @ np.linalg.solve(Ryy, Rxy.T))
+    i = np.argsort(np.real(ev))[::-1]; ev = np.real(ev[i]); A = np.real(A[:, i])
+    rc = np.sqrt(np.clip(ev, 0, 1))
+    A = A / np.sqrt(np.diag(A.T @ Rxx @ A))
+    B = np.linalg.solve(Ryy, Rxy.T) @ A / rc
+    B = B / np.sqrt(np.diag(B.T @ Ryy @ B))
+    LX, LY = Rxx @ A, Ryy @ B
+    for k in range(A.shape[1]):
+        j = np.argmax(np.abs(LY[:, k]))
+        if LY[j, k] < 0:
+            LX[:, k] *= -1; LY[:, k] *= -1
+    return dict(rc=rc, LX=LX, LY=LY)
+
 def parte5(df):
     r = {}
     X = df[B1].values.astype(float); Y = df[B2].values.astype(float)
@@ -369,6 +387,24 @@ def parte5(df):
     r["vif"] = pd.Series(np.concatenate([vif(X), vif(Y)]), index=B1 + B2)
     r["U"] = ((X - X.mean(0)) / X.std(0, ddof=1)) @ A
     r["V"] = ((Y - Y.mean(0)) / Y.std(0, ddof=1)) @ Bm
+    # erro-padrão aproximado (como no PROC CANCORR) e autovalores
+    r["ep"] = (1 - rc**2) / np.sqrt(n - 1)
+    lam_ev = rc**2 / (1 - rc**2)
+    r["autoval"] = pd.DataFrame(dict(autovalor=lam_ev, prop=lam_ev / lam_ev.sum(), acum=np.cumsum(lam_ev) / lam_ev.sum()))
+    # testes multivariados globais com aproximação F (mesmas fórmulas do SAS)
+    from statsmodels.multivariate.multivariate_ols import _MultivariateOLS
+    Xc = np.column_stack([np.ones(n), X])
+    L = np.eye(p + 1)[1:]
+    mt = _MultivariateOLS(Y, Xc).fit().mv_test(hypotheses=[("Bloco1", L)])
+    r["mv_global"] = mt.results["Bloco1"]["stat"]
+    # validação: duas metades aleatórias
+    rng = np.random.default_rng(2024)
+    idx = rng.permutation(n)
+    metades = []
+    for nome, ii in [("Metade A", idx[: n // 2]), ("Metade B", idx[n // 2:])]:
+        sub = parte5_basico(X[ii], Y[ii])
+        metades.append((nome, len(ii), sub))
+    r["validacao"] = metades
     # linearidade: correlação de Pearson vs Spearman entre blocos
     r["spearman"] = df[B1 + B2].corr("spearman").loc[B1, B2]
     return r

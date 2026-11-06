@@ -533,109 +533,201 @@ periodicamente para acompanhar migrações de clientes entre perfis.</p>
 # =============================================================== PARTE V (CCA)
 B1, B2 = C.B1, C.B2
 ts = r5["testes"]
-lin_ts = [[f"{int(r.dim)} a 3" if r.dim < 3 else "3", fn(r.rc, 4), fn(r.rc2, 4), fn(r.lambda_wilks, 5), fn(r.chi2, 2), int(r.gl), fp(r.p_chi), fn(r.F, 2), fp(r.p_F)] for r in ts.itertuples()]
-g = r5["global"]
-def tab_load(df_coef, df_load, df_cross, nomes, titulo):
-    lin = []
-    for v in nomes:
-        lin.append([NOMES[v]] + [fn(df_coef.loc[v].iloc[k], 3) for k in range(2)] + [fn(df_load.loc[v].iloc[k], 3) for k in range(2)] + [fn(df_cross.loc[v].iloc[k], 3) for k in range(2)])
-    return tabela(lin, ["Variável", "Coef. padr. 1", "Coef. padr. 2", "Carga 1", "Carga 2", "Carga cruzada 1", "Carga cruzada 2"], titulo)
+rc, rc2 = r5["rc"], r5["rc2"]
+mg = r5["mv_global"]
+mr = r5["mardia"]
 red = r5["red"]
-lin_red = [[f"Par {k+1}", fn(r5['rc2'][k], 4), fn(red.iloc[k].var_prop_X, 3), fn(red.iloc[k].red_X, 3), fn(red.iloc[k].var_prop_Y, 3), fn(red.iloc[k].red_Y, 3)] for k in range(3)]
-lin_red.append(["Total", "", fn(red.var_prop_X.sum(), 3), fn(red.red_X.sum(), 3), fn(red.var_prop_Y.sum(), 3), fn(red.red_Y.sum(), 3)])
+A_, B_ = r5["A"], r5["B"]
+LX, LY, CX, CY = r5["LX"], r5["LY"], r5["CX"], r5["CY"]
+av = r5["autoval"]
+
+# Tabela de correlações canônicas (formato PROC CANCORR)
+lin_rc = [[k + 1, fn(rc[k], 4), fn(r5['ep'][k], 4), fn(rc2[k], 4), fn(av.autovalor[k], 4),
+           fn(av.prop[k], 4), fn(av.acum[k], 4)] for k in range(3)]
+# Testes multivariados globais
+nomes_mv = {"Wilks' lambda": "Lambda de Wilks", "Pillai's trace": "Traço de Pillai",
+            "Hotelling-Lawley trace": "Traço de Hotelling-Lawley", "Roy's greatest root": "Maior raiz de Roy"}
+lin_mg = [[nomes_mv[k], fn(float(mg.loc[k, "Value"]), 4), fn(float(mg.loc[k, "F Value"]), 2), fn(float(mg.loc[k, "Num DF"]), 0),
+           fn(float(mg.loc[k, "Den DF"]), 2), fp(float(mg.loc[k, "Pr > F"]))] for k in nomes_mv]
+# Testes por função (qui-quadrado da aula + F de Rao)
+lin_ts = [[f"{int(r.dim)}ª função em diante" if r.dim < 3 else "3ª função", fn(r.lambda_wilks, 5), fn(r.chi2, 2), int(r.gl), fp(r.p_chi),
+           fn(r.F, 2), f"{int(r.gl1)}; {fn(r.gl2, 1)}", fp(r.p_F)] for r in ts.itertuples()]
+# Redundância no formato do SAS
+def tab_red(prop_own, prop_opp, titulo, rot):
+    lin = []
+    ca = co = 0
+    for k in range(3):
+        ca += prop_own[k]; co += prop_opp[k]
+        lin.append([f"{k+1}", fn(prop_own[k], 4), fn(ca, 4), fn(rc2[k], 4), fn(prop_opp[k], 4), fn(co, 4)])
+    return tabela(lin, ["Função canônica", "Proporção (próprias)", "Acumulada", "R² canônico", f"Proporção (opostas)", "Acumulada"], titulo)
+red_dep = tab_red(red.var_prop_Y.values, red.red_Y.values,
+                  "Tabela 25 – Variância padronizada do Bloco 2 (dependentes) explicada por suas próprias variáveis canônicas e pelas variáveis canônicas opostas (Bloco 1)", "")
+red_ind = tab_red(red.var_prop_X.values, red.red_X.values,
+                  "Tabela 26 – Variância padronizada do Bloco 1 (independentes) explicada por suas próprias variáveis canônicas e pelas variáveis canônicas opostas (Bloco 2)", "")
+# Pesos / cargas / cargas cruzadas (formato da aula)
+def tab_interp(k):
+    lin = []
+    for v in B1:
+        lin.append([f"Bloco 1 (indep.)", NOMES[v], fn(A_.loc[v].iloc[k], 4), fn(LX.loc[v].iloc[k], 4), fn(CX.loc[v].iloc[k], 4), f"{CX.loc[v].iloc[k]**2:.1%}".replace(".", ",")])
+    for v in B2:
+        lin.append([f"Bloco 2 (dep.)", NOMES[v], fn(B_.loc[v].iloc[k], 4), fn(LY.loc[v].iloc[k], 4), fn(CY.loc[v].iloc[k], 4), f"{CY.loc[v].iloc[k]**2:.1%}".replace(".", ",")])
+    return tabela(lin, ["Bloco", "Variável", "Peso (coef. padronizado)", "Carga (loading)", "Carga cruzada (cross-loading)", "Carga cruzada²"],
+                  f"Tabela {27 + k} – Função canônica {k+1}: pesos, cargas e cargas cruzadas", alinhar_esq=2)
+# variância de cada dependente explicada pelo bloco independente (2 funções significativas)
+expl = {v: CY.loc[v].iloc[0]**2 + CY.loc[v].iloc[1]**2 for v in B2}
+lin_expl = [[NOMES[v], f"{CY.loc[v].iloc[0]**2:.1%}".replace(".", ","), f"{CY.loc[v].iloc[1]**2:.1%}".replace(".", ","), f"{expl[v]:.1%}".replace(".", ",")] for v in B2]
+
+def eq(coef, nomes):
+    t = ""
+    for i, v in enumerate(nomes):
+        c = coef.loc[v]
+        sinal = (" − " if c < 0 else " + ") if i else ("−" if c < 0 else "")
+        t += f"{sinal}{fn(abs(c), 4)}·{NOMES[v]}"
+    return t
+eqs = "".join(f'<p class="eq">Função {k+1}: &nbsp; {eq(B_.iloc[:, k], B2)} &nbsp;=&nbsp; {eq(A_.iloc[:, k], B1)} &nbsp; (r<sub>c</sub> = {fn(rc[k], 4)})</p>' for k in range(2))
+
+# validação em subamostras
+val = r5["validacao"]
+lin_val = []
+for nome, nn, sub in val:
+    lin_val.append([nome, nn, fn(sub['rc'][0], 3), fn(sub['rc'][1], 3), fn(sub['rc'][2], 3),
+                    fn(sub['LX'][1, 0], 2), fn(sub['LY'][1, 0], 2), fn(sub['LX'][0, 1], 2), fn(sub['LY'][0, 1], 2)])
+lin_val.append(["Amostra completa", N, fn(rc[0], 3), fn(rc[1], 3), fn(rc[2], 3), fn(LX.loc['Freq_Loja', 'U1'], 2), fn(LY.loc['Gasto_Loja', 'V1'], 2),
+                fn(LX.loc['Freq_Online', 'U2'], 2), fn(LY.loc['Gasto_Online', 'V2'], 2)])
+
 Rx = r5["R"]
 lin_rxy = [[NOMES[a]] + [fn(Rx.loc[a, b], 3) for b in B2] for a in B1]
-mr = r5["mardia"]
 
 fig, axs = plt.subplots(1, 2, figsize=(10, 3.4))
 for k, ax in enumerate(axs):
     ax.scatter(r5["U"][:, k], r5["V"][:, k], s=9, color=[BLUE, ORANGE][k], alpha=0.6, lw=0)
     ax.set_xlabel(f"U{k+1} – variável canônica do Bloco 1 (engajamento)")
     ax.set_ylabel(f"V{k+1} – variável canônica do Bloco 2 (retorno)")
-    ax.set_title(f"Par canônico {k+1}: r = {r5['rc'][k]:.3f}".replace(".", ","))
+    ax.set_title(f"Função canônica {k+1}: r = {rc[k]:.3f}".replace(".", ","))
 fig.tight_layout()
-fig6 = fig_html(fig, "Figura 7 – Escores dos dois pares canônicos significativos.")
+fig6 = fig_html(fig, "Figura 7 – Escores das duas funções canônicas significativas.")
 
 fig, ax = plt.subplots(figsize=(6.6, 3.6))
 nomes_all = [NOMES[v] for v in B1 + B2]
-car1 = list(r5["LX"]["U1"]) + list(r5["LY"]["V1"]); car2 = list(r5["LX"]["U2"]) + list(r5["LY"]["V2"])
+car1 = list(LX["U1"]) + list(LY["V1"]); car2 = list(LX["U2"]) + list(LY["V2"])
 yy = np.arange(len(nomes_all))[::-1]
-ax.barh(yy + 0.2, car1, height=0.36, color=BLUE, label="Par 1 (canal físico)")
-ax.barh(yy - 0.2, car2, height=0.36, color=ORANGE, label="Par 2 (canal digital)")
+ax.barh(yy + 0.2, car1, height=0.36, color=BLUE, label="Função 1 (canal físico)")
+ax.barh(yy - 0.2, car2, height=0.36, color=ORANGE, label="Função 2 (canal digital)")
 ax.set_yticks(yy); ax.set_yticklabels(nomes_all); ax.axvline(0, color=INK2, lw=0.8)
 ax.axhline(2.5, color="#bdbcb6", lw=0.8, ls="--")
 ax.text(1.02, 4, "Bloco 1", fontsize=8, color=INK2, rotation=90, va="center", transform=ax.get_yaxis_transform())
 ax.text(1.02, 1, "Bloco 2", fontsize=8, color=INK2, rotation=90, va="center", transform=ax.get_yaxis_transform())
 ax.set_xlim(-0.3, 1.1); ax.set_xlabel("Carga canônica (correlação com a variável canônica)")
-ax.legend(loc="lower right", fontsize=8); ax.set_title("Cargas canônicas dos pares significativos")
+ax.legend(loc="lower right", fontsize=8); ax.set_title("Cargas canônicas das funções significativas")
 fig.tight_layout()
-fig7 = fig_html(fig, "Figura 8 – Estrutura de cargas: o Par 1 é formado pelo canal físico e o Par 2 pelo canal digital.", "72%")
+fig7 = fig_html(fig, "Figura 8 – Estrutura de cargas: a Função 1 é formada pelo canal físico e a Função 2 pelo canal digital.", "72%")
 
 H.append(f"""
 <h1>6. Parte IV – Relação entre Engajamento Operacional e Retorno Financeiro/Percepção</h1>
-<h2>6.1 Metodologia</h2>
-<p>Há dois <b>conjuntos de variáveis quantitativas</b>, sem que um seja a única resposta do outro: Bloco 1 (Freq. Online, Freq.
-Loja, Tempo de Relação) e Bloco 2 (Gasto Online, Gasto Loja, NPS). O interesse é a <b>relação global entre os blocos</b>.
-Regressões múltiplas separadas tratariam cada variável do Bloco 2 isoladamente e ignorariam as correlações dentro
-de cada bloco. A <b>Análise de Correlação Canônica</b> é o método apropriado: ela encontra pares de combinações lineares
-U<sub>k</sub> = <b>a</b>'<b>X</b> (Bloco 1) e V<sub>k</sub> = <b>b</b>'<b>Y</b> (Bloco 2) com correlação máxima, sendo cada par não correlacionado
-com os anteriores. As correlações canônicas são as raízes dos autovalores de
-<b>R</b><sub>11</sub><sup>−1</sup><b>R</b><sub>12</sub><b>R</b><sub>22</sub><sup>−1</sup><b>R</b><sub>21</sub>; com 3 variáveis em cada bloco existem até 3 pares.
-Utilizou-se a matriz de correlações (variáveis padronizadas), pois as unidades são distintas.</p>
+<p>A análise segue as etapas da correlação canônica: (1) especificação dos objetivos, (2) plano de análise, (3) pressupostos,
+(4) cálculo do modelo, (5) interpretação dos resultados e (6) validação.</p>
 
-<h2>6.2 Validação dos pressupostos</h2>
+<h2>6.1 Objetivos e justificativa do método</h2>
+<p>Deseja-se avaliar a associação entre dois conjuntos de variáveis <b>métricas</b>: o <b>Bloco 1 – Engajamento Operacional</b>
+(Freq. Online, Freq. Loja, Tempo de Relação), tratado como conjunto <b>independente</b>, e o <b>Bloco 2 – Retorno Financeiro e
+Percepção</b> (Gasto Online, Gasto Loja, NPS), tratado como conjunto <b>dependente</b>. Os objetivos são verificar se existe relação
+entre os blocos e explicar a natureza dessa relação, medindo a contribuição de cada variável.</p>
+<p>As alternativas mais simples não são adequadas: (i) analisar as 3 × 3 = 9 correlações cruzadas gera excesso de resultados
+e não isola o efeito de cada variável, pois as variáveis de cada bloco são correlacionadas entre si; (ii) uma série de três
+regressões múltiplas, uma para cada variável dependente, produz equações correlacionadas, já que as dependentes são
+correlacionadas; (iii) a análise fatorial estuda o inter-relacionamento dentro de <i>um</i> conjunto, e aqui há dois. A
+<b>correlação canônica</b>, extensão da regressão múltipla para várias dependentes, resolve esses problemas: constrói, para
+cada bloco, um índice composto (soma ponderada das variáveis), U = <b>a</b>'<b>X</b> e V = <b>b</b>'<b>Y</b>, e escolhe os pesos de modo a
+<b>maximizar a correlação entre os dois índices</b>. Os pesos e as correlações canônicas são obtidos pelos autovetores e
+autovalores de <b>R</b><sub>11</sub><sup>−1</sup><b>R</b><sub>12</sub><b>R</b><sub>22</sub><sup>−1</sup><b>R</b><sub>21</sub>; os pares seguintes maximizam a
+correlação restante, sendo não correlacionados com os anteriores. Com 3 variáveis em cada bloco existem até 3 funções
+canônicas. Como as unidades são diferentes (R$, contagens, meses, pontos), as variáveis foram padronizadas.</p>
+{tabela(lin_rxy, ["Bloco 1 \\ Bloco 2"] + [NOMES[b] for b in B2], "Tabela 21 – Correlações entre os blocos (as 9 correlações que a análise canônica resume)")}
+
+<h2>6.2 Plano de análise e pressupostos</h2>
 <ul>
-<li><b>Linearidade:</b> as correlações de Pearson e de Spearman entre os blocos são praticamente iguais (ex.: Freq. Loja × Gasto Loja 0,979 vs. 0,976;
-Freq. Online × Gasto Online 0,795 vs. 0,764), indicando relações lineares.</li>
+<li><b>Tamanho da amostra:</b> pela regra de pelo menos 10 observações por variável, seriam necessárias 60 observações
+(6 variáveis); a amostra de 300 clientes (50 por variável) atende com folga.</li>
+<li><b>Linearidade:</b> a correlação canônica capta apenas relações lineares. As correlações de Pearson e de Spearman entre os
+blocos são praticamente iguais (ex.: Freq. Loja × Gasto Loja 0,979 vs. 0,976; Freq. Online × Gasto Online 0,795 vs. 0,764).</li>
 <li><b>Normalidade multivariada</b> (necessária para os testes de significância): Mardia não rejeita a assimetria (χ² = {fn(mr['chi2'],2)}; p = {fp(mr['p_ass'])});
-a curtose é levemente inferior à esperada (b<sub>2</sub> = {fn(mr['b2'],2)} vs. 48; p = {fp(mr['p_curt'])}) pelo truncamento do NPS – desvio de pequena magnitude,
-irrelevante com n = 300.</li>
-<li><b>Multicolinearidade dentro dos blocos:</b> VIFs entre {fn(r5['vif'].min(),2)} e {fn(r5['vif'].max(),2)} (calculados dentro de cada bloco) –
-sem problema, o que torna os coeficientes canônicos estáveis e interpretáveis.</li>
-<li><b>Tamanho amostral:</b> 300 observações para 6 variáveis (50 por variável), acima do mínimo recomendado (≈ 10 a 20 por variável).</li>
+a curtose é levemente inferior à esperada (b<sub>2</sub> = {fn(mr['b2'],2)} vs. 48; p = {fp(mr['p_curt'])}) pelo truncamento do NPS em 100 –
+desvio de pequena magnitude diante de n = 300.</li>
+<li><b>Multicolinearidade dentro dos blocos:</b> VIFs entre {fn(r5['vif'].min(),2)} e {fn(r5['vif'].max(),2)} (calculados dentro de cada bloco). Ainda assim,
+como recomendado, a interpretação se apoia principalmente nas cargas e cargas cruzadas, e não apenas nos pesos.</li>
 </ul>
-{tabela(lin_rxy, ["Bloco 1 \\ Bloco 2"] + [NOMES[b] for b in B2], "Tabela 21 – Correlações entre os blocos (R<sub>12</sub>)")}
 
-<h2>6.3 Correlações canônicas e significância</h2>
-{tabela(lin_ts, ["Dimensões testadas", "Corr. canônica", "R² canônico", "Λ de Wilks", "χ² de Bartlett", "gl", "p (χ²)", "F de Rao", "p (F)"], "Tabela 22 – Testes sequenciais das correlações canônicas")}
-<p>O teste global (todas as dimensões) é altamente significativo: Λ de Wilks = {fn(g['wilks'],5)}, Traço de Pillai = {fn(g['pillai'],3)},
-Traço de Hotelling-Lawley = {fn(g['hotelling'],2)}, maior raiz de Roy = {fn(g['roy'],4)}, todos com p {fp(ts.p_F.iloc[0])}. Pelos testes sequenciais,
-<b>as duas primeiras dimensões são significativas</b> (r<sub>c1</sub> = {fn(r5['rc'][0],3)}; r<sub>c2</sub> = {fn(r5['rc'][1],3)}) e a terceira não
-(r<sub>c3</sub> = {fn(r5['rc'][2],3)}; p = {fp(ts.p_chi.iloc[2])}). Interpretam-se, portanto, apenas os dois primeiros pares.</p>
+<h2>6.3 Cálculo do modelo</h2>
+{tabela(lin_rc, ["Função", "Correlação canônica", "Erro-padrão aprox.", "R² canônico", "Autovalor", "Proporção", "Acumulada"], "Tabela 22 – Correlações canônicas e autovalores")}
+<p>A primeira correlação canônica é {fn(rc[0],4)} (R² = {fn(rc2[0],4)}) e a segunda, {fn(rc[1],4)} (R² = {fn(rc2[1],4)}); a terceira é praticamente nula
+({fn(rc[2],4)}). Escritas com os pesos canônicos padronizados (dependentes = independentes), as duas primeiras funções são:</p>
+{eqs}
+
+<h2>6.4 Significância estatística das funções</h2>
+<p>As funções devem ser testadas em conjunto e isoladamente. O teste conjunto usa os quatro critérios multivariados:</p>
+{tabela(lin_mg, ["Estatística", "Valor", "F aproximado", "gl num.", "gl den.", "p-valor"], "Tabela 23 – Testes multivariados para o conjunto das funções canônicas (s = 3; m = −0,5; N = 146)")}
+<p>Todos rejeitam a hipótese nula de que as funções canônicas não são significantes (p {fp(float(mg.loc["Wilks' lambda", "Pr > F"]))}). Para testar cada função,
+utiliza-se a estatística qui-quadrado de Bartlett, χ² = −[N − 1 − 0,5(p + q + 1)] · ln Π(1 − R²<sub>ci</sub>), com p × q graus de liberdade
+para o teste da primeira função em diante, (p − 1)(q − 1) para a segunda em diante e assim por diante; a aproximação F de Rao
+é apresentada como confirmação.</p>
+{tabela(lin_ts, ["Hipótese testada", "Λ de Wilks", "χ²", "gl", "p (χ²)", "F de Rao", "gl", "p (F)"], "Tabela 24 – Testes sequenciais de cada função canônica")}
+<p><b>As funções 1 e 2 são estatisticamente significantes</b>; a função 3 não é (p = {fp(ts.p_chi.iloc[2])}) e é descartada.</p>
 {fig6}
 
-<h2>6.4 Estrutura de pesos e cargas</h2>
-{tab_load(r5['A'], r5['LX'], r5['CX'], B1, "Tabela 23 – Bloco 1 (Engajamento Operacional): coeficientes padronizados, cargas e cargas cruzadas")}
-{tab_load(r5['B'], r5['LY'], r5['CY'], B2, "Tabela 24 – Bloco 2 (Retorno Financeiro e Percepção): coeficientes padronizados, cargas e cargas cruzadas")}
-{tabela(lin_red, ["Par", "R² canônico", "Var. extraída Bloco 1", "Redundância Bloco 1 | Bloco 2", "Var. extraída Bloco 2", "Redundância Bloco 2 | Bloco 1"], "Tabela 25 – Variância extraída e índices de redundância")}
+<h2>6.5 Significância prática: índice de redundância</h2>
+<p>O R² canônico estima a variância compartilhada entre os <i>índices</i> U e V, e não entre os conjuntos de variáveis originais; por
+isso pode superestimar a relação. O <b>índice de redundância</b> corrige esse viés: é a proporção da variância das variáveis de um
+bloco explicada pela variável canônica do bloco oposto (variância extraída × R² canônico).</p>
+{red_dep}
+{red_ind}
+<p>Para o bloco dependente, a função 1 tem redundância de <b>{fn(red.red_Y.iloc[0],4)}</b> e a função 2 de <b>{fn(red.red_Y.iloc[1],4)}</b>: juntas, as variáveis de
+engajamento explicam <b>{fn((red.red_Y.iloc[0]+red.red_Y.iloc[1])*100,1)}% da variância</b> do conjunto Gasto Online, Gasto Loja e NPS. Ambas as funções têm,
+portanto, significância prática (diferentemente da função 3, cuja redundância é {fn(red.red_Y.iloc[2],4)}). A redundância não chega a valores mais altos
+porque o NPS praticamente não é explicado pelo Bloco 1 (ver Tabela 29).</p>
+
+<h2>6.6 Interpretação: pesos, cargas e cargas cruzadas</h2>
+<p>Os <b>pesos</b> canônicos são análogos aos betas da regressão, mas são instáveis entre amostras e difíceis de interpretar quando há
+multicolinearidade. Por isso, a interpretação se baseia sobretudo nas <b>cargas canônicas</b> (correlação de cada variável com o índice
+do próprio bloco: quanto maior, mais importante a variável na formação do índice) e nas <b>cargas cruzadas</b> (correlação de cada
+variável com o índice do bloco oposto; ao quadrado, indicam quanto da variância da variável é explicada pelo outro bloco).</p>
+{tab_interp(0)}
+{tab_interp(1)}
+{tabela(lin_expl, ["Variável dependente", "Pela função 1", "Pela função 2", "Total (funções 1 e 2)"], "Tabela 29 – Variância de cada variável dependente explicada pelo bloco de engajamento (cargas cruzadas ao quadrado)")}
 {fig7}
 <ul>
-<li><b>Par 1 – eixo do canal físico (r<sub>c</sub> = {fn(r5['rc'][0],3)}):</b> U<sub>1</sub> é praticamente a própria Freq. Loja (carga {fn(r5['LX'].loc['Freq_Loja','U1'],3)}) e
-V<sub>1</sub> é praticamente o Gasto Loja (carga {fn(r5['LY'].loc['Gasto_Loja','V1'],3)}). O NPS tem participação pequena e positiva ({fn(r5['LY'].loc['NPS_Pontuacao','V1'],3)}).
-A relação é quase determinística: quem vai mais à loja gasta proporcionalmente mais na loja.</li>
-<li><b>Par 2 – eixo do canal digital (r<sub>c</sub> = {fn(r5['rc'][1],3)}):</b> U<sub>2</sub> é dominado por Freq. Online (carga {fn(r5['LX'].loc['Freq_Online','U2'],3)})
-com contribuição do Tempo de Relação ({fn(r5['LX'].loc['Tempo_Relacao','U2'],3)}); V<sub>2</sub> é dominado por Gasto Online ({fn(r5['LY'].loc['Gasto_Online','V2'],3)}).
-O NPS recebe <b>coeficiente negativo</b> ({fn(r5['B'].loc['NPS_Pontuacao','V2'],3)}) com carga quase nula: ele atua como supressor, removendo do
-Gasto Online a parte associada à fidelidade/satisfação, que não é explicada pelo engajamento – o que eleva a correlação do par.
-O Tempo de Relação tem coeficiente padronizado quase nulo: sua carga vem da correlação com Freq. Online (0,45), ou seja,
-clientes antigos gastam mais online <i>porque</i> compram mais vezes.</li>
-<li><b>Redundância:</b> os dois primeiros pares explicam juntos {fn((red.red_Y.iloc[0]+red.red_Y.iloc[1])*100,1)}% da variância do Bloco 2 a partir do Bloco 1
-(e {fn((red.red_X.iloc[0]+red.red_X.iloc[1])*100,1)}% no sentido inverso). O restante corresponde sobretudo ao NPS, que fica isolado na terceira
-dimensão não significativa (carga −0,98 em V<sub>3</sub>).</li>
+<li><b>Função 1 – eixo do canal físico (r<sub>c</sub> = {fn(rc[0],3)}):</b> o índice de engajamento é praticamente a Freq. Loja (carga {fn(LX.loc['Freq_Loja','U1'],3)}) e o índice de
+retorno é praticamente o Gasto Loja (carga {fn(LY.loc['Gasto_Loja','V1'],3)}). A carga cruzada do Gasto Loja é {fn(CY.loc['Gasto_Loja','U1'],3)}: o engajamento explica
+{CY.loc['Gasto_Loja','U1']**2:.0%} da variância do gasto em loja por esta função. Quem vai mais à loja gasta proporcionalmente mais na loja.</li>
+<li><b>Função 2 – eixo do canal digital (r<sub>c</sub> = {fn(rc[1],3)}):</b> o índice de engajamento é dominado por Freq. Online (carga {fn(LX.loc['Freq_Online','U2'],3)}),
+com contribuição do Tempo de Relação ({fn(LX.loc['Tempo_Relacao','U2'],3)}); o índice de retorno é dominado por Gasto Online ({fn(LY.loc['Gasto_Online','V2'],3)}).
+A carga cruzada do Gasto Online é {fn(CY.loc['Gasto_Online','U2'],3)} ({CY.loc['Gasto_Online','U2']**2:.0%} da variância explicada). O Tempo de Relação tem peso quase nulo
+({fn(A_.loc['Tempo_Relacao','U2'],3)}) apesar da carga moderada: sua importância vem da correlação com a Freq. Online (0,45), ilustrando por que pesos
+e cargas podem divergir. O NPS recebe peso negativo ({fn(B_.loc['NPS_Pontuacao','V2'],3)}) com carga quase nula, ou seja, atua apenas como ajuste
+(supressor) do índice e não deve ser interpretado como relação negativa com o engajamento.</li>
+<li><b>NPS:</b> suas cargas cruzadas são baixas nas duas funções; somente {expl['NPS_Pontuacao']:.1%} da sua variância é explicada pelo
+engajamento operacional (Tabela 29), contra {expl['Gasto_Loja']:.0%} do Gasto Loja e {expl['Gasto_Online']:.0%} do Gasto Online.</li>
 </ul>
 
-<h2>6.5 Relação teórica e interpretação negocial</h2>
+<h2>6.7 Validação</h2>
+<p>Para verificar a estabilidade do modelo em outra amostra, os clientes foram divididos aleatoriamente em duas metades e a
+análise foi refeita em cada uma.</p>
+{tabela(lin_val, ["Amostra", "n", "r<sub>c1</sub>", "r<sub>c2</sub>", "r<sub>c3</sub>", "Carga Freq. Loja (U1)", "Carga Gasto Loja (V1)", "Carga Freq. Online (U2)", "Carga Gasto Online (V2)"],
+        "Tabela 30 – Validação por subamostras")}
+<p>As correlações canônicas e as cargas principais praticamente se repetem nas duas metades, e a terceira função continua
+irrelevante: a estrutura encontrada é estável. Como os dados são simulados, recomenda-se ainda repetir a análise em dados
+reais antes de usar os resultados operacionalmente.</p>
+
+<h2>6.8 Relação teórica e interpretação negocial</h2>
 <p>A relação entre o padrão de uso e o retorno é forte, mas <b>organizada por canal</b>: há dois “circuitos” praticamente
-independentes – frequência em loja → gasto em loja e frequência online (impulsionada pelo tempo de relação) → gasto
-online. Isso significa que o engajamento em um canal não “transborda” para o retorno do outro canal. Já a
-<b>percepção da marca (NPS) não é explicada pelo engajamento operacional</b>: comprar mais vezes ou estar há mais tempo
-no programa não torna o cliente mais promotor; o NPS se associa ao gasto online por meio de outros fatores (satisfação,
-região e status de fidelidade, vistos nas partes anteriores). Implicações: (i) metas de receita podem ser projetadas a
-partir de metas de frequência por canal – aumentar uma visita física por ano equivale a ≈ R$ 40 em gasto na loja e
-uma transação digital a ≈ R$ 35 online; (ii) programas de omnicanalidade precisam de incentivos específicos para
-cruzar canais, pois isso não ocorre espontaneamente; (iii) ações para melhorar o NPS devem atuar na experiência e na
-satisfação (Parte I), e não apenas em estímulos de frequência; (iv) o tempo de relação gera valor apenas indiretamente,
-via frequência digital – a retenção deve vir acompanhada de ativação.</p>
+independentes – frequência em loja → gasto em loja e frequência online (associada ao tempo de relação) → gasto online.
+O engajamento em um canal não se traduz em retorno no outro canal. Já a <b>percepção da marca (NPS) praticamente não é
+explicada pelo engajamento operacional</b>: comprar mais vezes ou estar há mais tempo no programa não torna o cliente mais
+promotor; o NPS se relaciona com outros fatores (satisfação, região e status de fidelidade, vistos nas partes anteriores).
+Implicações: (i) metas de receita podem ser desdobradas em metas de frequência por canal; (ii) programas de omnicanalidade
+precisam de incentivos específicos para levar o cliente de um canal ao outro, pois isso não ocorre espontaneamente; (iii) ações
+para melhorar o NPS devem atuar na experiência e na satisfação, e não apenas em estímulos de frequência; (iv) o tempo de
+relação parece gerar valor apenas indiretamente, via frequência digital – a retenção deve vir acompanhada de ativação.
+Como nas demais partes, essas recomendações são hipóteses gerenciais a validar em dados reais.</p>
 """)
 
 # =============================================================== CONCLUSÃO
@@ -646,7 +738,7 @@ H.append(f"""
 <tr><td class="l">2. Vetor (Gasto Online, Gasto Loja, NPS)</td><td class="l">MANOVA</td><td class="l">Efeito global significativo (Λ = {fn(float(mv.loc["Wilks' lambda","Value"]),3)}); Sul lidera em gasto, Centro em NPS</td><td class="l">Ativação digital no Norte; monetizar a boa percepção do Centro</td></tr>
 <tr><td class="l">3. Separação por Status</td><td class="l">Análise discriminante linear de Fisher</td><td class="l">Gasto Online tem a maior diferença média; há também diferenças menores em Gasto Loja e Freq. Loja. Erro observado: {fn(cls['loo']*100,1)}%</td><td class="l">Tratar como indicador inicial; validar em dados externos antes de definir elegibilidade ou risco</td></tr>
 <tr><td class="l">4. Mapa perceptual</td><td class="l">Escalonamento multidimensional</td><td class="l">Dois gradientes: volume e canal (stress {fn(s2.stress,3)}; RSQ {fn(s2.rsq,3)})</td><td class="l">Segmentação contínua por valor (eixo 1) e canal (eixo 2)</td></tr>
-<tr><td class="l">5. Engajamento × Retorno</td><td class="l">Correlação canônica</td><td class="l">Dois pares significativos, um por canal (0,98 e 0,92); NPS não explicado pelo engajamento</td><td class="l">Metas de receita via frequência por canal; NPS via experiência</td></tr>
+<tr><td class="l">5. Engajamento × Retorno</td><td class="l">Correlação canônica</td><td class="l">Duas funções significativas, uma por canal (0,98 e 0,92); redundância de {fn((red.red_Y.iloc[0]+red.red_Y.iloc[1])*100,1)}%; NPS não explicado pelo engajamento</td><td class="l">Metas de receita via frequência por canal; NPS via experiência</td></tr>
 </tbody></table>
 <p>Em conjunto, as análises indicam diferenças regionais na satisfação e no conjunto de indicadores financeiros/perceptuais;
 associação forte entre o status de fidelidade e o perfil de gastos; e relações entre frequência e gasto predominantemente
@@ -684,6 +776,7 @@ figcaption { font-size: 8.4pt; color: #52514e; margin-top: 3px; }
 .capa .info { margin-top: 5cm; font-size: 10.5pt; color: #52514e; }
 .sumario { page-break-after: always; }
 .sumario li { margin-bottom: 6px; }
+.eq { text-align: center; font-size: 9pt; margin: 4px 0; }
 .nota { font-size: 8.4pt; color: #52514e; }
 """
 
